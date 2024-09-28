@@ -9,6 +9,26 @@ Think a bit about the row counts: how many distinct vendors, product names are t
 How many customers are there (y). 
 Before your final group by you should have the product of those two queries (x*y).  */
 
+-- Calculate how much money each vendor would make per product, selling 5 units to each customer
+WITH vendor_product_sales AS (
+    -- Subquery to get distinct vendor and product names along with the price per unit
+    SELECT v.vendor_name, p.product_name, vi.original_price
+    FROM vendor v
+    JOIN vendor_inventory vi ON v.vendor_id = vi.vendor_id
+    JOIN product p ON vi.product_id = p.product_id
+),
+customer_count AS (
+    -- Subquery to count the total number of customers
+    SELECT COUNT(*) AS total_customers
+    FROM customer
+)
+
+-- Cross join to calculate the total sales
+SELECT vps.vendor_name, vps.product_name, 
+       (5 * vps.original_price * cc.total_customers) AS total_sales
+FROM vendor_product_sales vps
+CROSS JOIN customer_count cc
+GROUP BY vps.vendor_name, vps.product_name, vps.original_price, cc.total_customers;
 
 
 -- INSERT
@@ -17,17 +37,31 @@ This table will contain only products where the `product_qty_type = 'unit'`.
 It should use all of the columns from the product table, as well as a new column for the `CURRENT_TIMESTAMP`.  
 Name the timestamp column `snapshot_timestamp`. */
 
+-- Create the product_units table containing only 'unit' products and adding a timestamp column
+CREATE TABLE product_units AS
+SELECT *,
+       CURRENT_TIMESTAMP AS snapshot_timestamp
+FROM product
+WHERE product_qty_type = 'unit';
 
 
 /*2. Using `INSERT`, add a new row to the product_units table (with an updated timestamp). 
 This can be any product you desire (e.g. add another record for Apple Pie). */
 
+-- Insert a new row into the product_units table with an updated timestamp
+INSERT INTO product_units (product_id, product_name, product_size, product_category_id, product_qty_type, snapshot_timestamp)
+VALUES (11, 'Cherry Pie', '10"', 3, 'unit', CURRENT_TIMESTAMP);
 
 
 -- DELETE
 /* 1. Delete the older record for the whatever product you added. 
 
 HINT: If you don't specify a WHERE clause, you are going to have a bad time.*/
+
+-- Delete the older record for the product 'Cherry Pie'
+DELETE FROM product_units
+WHERE product_name = 'Cherry Pie'
+AND snapshot_timestamp < CURRENT_TIMESTAMP;
 
 
 
@@ -48,4 +82,20 @@ Finally, make sure you have a WHERE statement to update the right row,
 	you'll need to use product_units.product_id to refer to the correct row within the product_units table. 
 When you have all of these components, you can run the update statement. */
 
+ALTER TABLE product_units
+ADD current_quantity INT;
 
+-- Update current_quantity to the last quantity value from vendor_inventory
+UPDATE product_units
+SET current_quantity = (
+    SELECT COALESCE(vi.quantity, 0) 
+    FROM vendor_inventory vi
+    WHERE vi.product_id = product_units.product_id
+    ORDER BY vi.market_date DESC
+    LIMIT 1
+)
+WHERE EXISTS (
+    SELECT 1
+    FROM vendor_inventory vi
+    WHERE vi.product_id = product_units.product_id
+);
